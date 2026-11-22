@@ -54,11 +54,11 @@ jobs:
           # kernel modules, extra partitions or conflicting WebUI slots.
           for m in \
             HTOP NANO IPERF3 TTYD SOCAT MTR LRZSZ TCPDUMP CURL \
-            SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS SINGBOX NAIVEPROXY \
+            SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
             REDSOCKS \
-            SMARTDNS ADGUARDHOME ALIDDNS DDNSTO ALDRIVER \
-            FRPC FRPS ARIA TRANSMISSION FTPD \
-            DUMP1090 MSD_LITE VLMCSD MENTOHUST U2EC \
+            SMARTDNS ALIDDNS DDNSTO \
+            FRPC FRPS FTPD \
+            MSD_LITE VLMCSD MENTOHUST U2EC \
             SCUTCLIENT DOGCOM GDUT_DRCOM MINIEAP NJIT_CLIENT SRELAY; do
             echo "CONFIG_FIRMWARE_INCLUDE_${m}=y" >> "$CFG"
           done
