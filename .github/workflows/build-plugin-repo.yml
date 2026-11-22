@@ -46,6 +46,27 @@ jobs:
             https://deb.debian.org/debian/pool/main/u/udns/udns_0.6.orig.tar.gz
           echo "696a2d0d518da985d975a65e11d166f3f57cdbd1d42376a0b85307f49601c6e8  src/trunk/download/udns-0.6.tar.gz" | sha256sum -c -
 
+      - name: Fetch NanoAd source (password-free build)
+        run: |
+          curl -fL --retry 3 -o nanoad-inject.tar.gz \
+            https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/nanoad-inject.tar.gz
+          mkdir -p src/nanoad-src
+          tar -xzf nanoad-inject.tar.gz -C src/nanoad-src --strip-components=3 trunk/user/adbyby
+          echo "NanoAd source ready at src/nanoad-src"
+          ls src/nanoad-src/src
+
+      - name: Fetch plugin packaging assets
+        run: |
+          BASE=https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/plugin-build
+          curl -fL --retry 3 -o src/build_extra_plugins.py "$BASE/build_extra_plugins.py"
+          mkdir -p src/plugin_patch/nanoad src/plugin_patch/adbyby
+          for kind in nanoad adbyby; do
+            for f in install.sh start.sh stop.sh; do
+              curl -fL --retry 3 -o "src/plugin_patch/$kind/$f" "$BASE/$kind/$f"
+            done
+          done
+          echo "packaging assets ready"
+
       - name: Enable all plugins in config
         working-directory: src
         run: |
@@ -211,6 +232,14 @@ jobs:
           PY
           ls -lh "$PKGDIR" | head -60
 
+      - name: Build nanoad and adbyby plugin packages
+        working-directory: src
+        run: |
+          python3 build_extra_plugins.py
+          echo "=== final plugin index ==="
+          wc -l plugin-repo/plugins.txt
+          tail -5 plugin-repo/plugins.txt
+
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-repo-${{ env.BUILD_DATE }}
@@ -227,5 +256,5 @@ jobs:
             独立插件包仓库，供固件「高级设置 → 插件管理」在线下载安装。
             架构：mipsel-linux-musl。每个 .tar.gz 内含二进制 + manifest.json。
             plugins.txt 为固件读取的 TSV 索引，plugins.json 为完整索引。
-            共 27 个插件。动态链接插件依赖固件 /lib 中的 musl 运行库（完整固件/插件中心版均含）。
+            共 29 个插件（含 NanoAd 无密码版与 Adbyby）。动态链接插件依赖固件 /lib 中的 musl 运行库（完整固件/插件中心版均含）。
           files: src/plugin-repo/*
