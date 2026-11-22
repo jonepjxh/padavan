@@ -40,6 +40,13 @@ jobs:
           tar -xzf padavan.tar.gz -C src --strip-components=1
           echo "Source commit: $(curl -fsSL https://api.github.com/repos/TurBoTse/padavan/commits/main | python3 -c 'import json,sys;print(json.load(sys.stdin)["sha"])')"
 
+      - name: Seed udns source (upstream mirrors are dead)
+        run: |
+          mkdir -p src/trunk/download
+          curl -fL --retry 3 -o src/trunk/download/udns-0.6.tar.gz \
+            https://deb.debian.org/debian/pool/main/u/udns/udns_0.6.orig.tar.gz
+          echo "696a2d0d518da985d975a65e11d166f3f57cdbd1d42376a0b85307f49601c6e8  src/trunk/download/udns-0.6.tar.gz" | sha256sum -c -
+
       - name: Build firmware
         working-directory: src
         run: make K2P TOOLCHAIN=mipsel-linux-musl
