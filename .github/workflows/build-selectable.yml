@@ -1,0 +1,163 @@
+name: Build K2P (Selectable Plugins)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: '插件预设：lite=极简(仅基线+NanoAd) / balanced=均衡(代理+DNS+工具) / full=官方默认全套'
+        required: true
+        type: choice
+        options:
+          - lite
+          - balanced
+          - full
+        default: lite
+      plugins:
+        description: '精确插件开关 JSON（覆盖档位），如 {"shadowsocks":"y","xray":"n"}；留空=用档位默认'
+        required: false
+        type: string
+        default: ''
+      suffix:
+        description: '固件版本后缀，用于文件名与 Release tag'
+        required: true
+        type: string
+        default: 'lite'
+      publish_release:
+        description: '是否发布到 GitHub Release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    name: Build K2P-${{ inputs.profile }} (mipsel-linux-musl)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set build date
+        run: echo "BUILD_DATE=$(TZ='Asia/Shanghai' date +%Y%m%d)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: turbo-k2p-musl
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison flex gperf help2man libtool-bin texinfo python3-docutils \
+            autopoint gettext ccache autoconf automake liblzma-dev \
+            libltdl-dev liblzo2-dev curl xz-utils build-essential jq
+
+      - name: Download upstream source
+        run: |
+          curl -fL --retry 3 -o padavan.tar.gz \
+            https://codeload.github.com/TurBoTse/padavan/tar.gz/refs/heads/main
+          mkdir -p src
+          tar -xzf padavan.tar.gz -C src --strip-components=1
+
+      - name: Apply NanoAd integration overlay
+        run: |
+          curl -fL --retry 3 -o nanoad-inject.tar.gz \
+            https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/nanoad-inject.tar.gz
+          tar -xzf nanoad-inject.tar.gz -C src
+          echo "NanoAd overlay applied."
+
+      - name: Seed udns source (upstream mirrors are dead)
+        run: |
+          mkdir -p src/trunk/download
+          curl -fL --retry 3 -o src/trunk/download/udns-0.6.tar.gz \
+            https://deb.debian.org/debian/pool/main/u/udns/udns_0.6.orig.tar.gz
+          echo "696a2d0d518da985d975a65e11d166f3f57cdbd1d42376a0b85307f49601c6e8  src/trunk/download/udns-0.6.tar.gz" | sha256sum -c -
+
+      - name: Apply plugin selection
+        working-directory: src
+        run: |
+          CONFIGFILE=trunk/configs/templates/K2P.config
+          PROFILE="${{ inputs.profile }}"
+          PLUGINS='${{ inputs.plugins }}'
+
+          # All swappable plugin keys. ADBYBY is the NanoAd slot and is NEVER disabled.
+          ALL_PLUGINS=(VLMCSD MSD_LITE HTOP SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
+            SINGBOX NAIVEPROXY REDSOCKS SMARTDNS ADGUARDHOME DNSFORWARDER \
+            TRANSMISSION TRANSMISSION_WEB_CONTROL ARIA ARIA_WEB_CONTROL \
+            SMBD FTPD MINIDLNA FIREFLY XUPNPD NTFS_3G RPL2TP \
+            OPENVPN SSWAN ZEROTIER WIREGUARD FRPC FRPS SOFTETHERVPN_SERVER \
+            SOFTETHERVPN_CLIENT SOFTETHERVPN_CMD TTYD IPERF3 MTR SOCAT \
+            SRELAY DUMP1090 RTL_SDR SCUTCLIENT GDUT_DRCOM DOGCOM MINIEAP \
+            NJIT_CLIENT DDNSTO ALIDDNS SQM HTTPS SFTP OPENSSH)
+
+          # Baseline: turn off every swappable plugin first.
+          for m in "${ALL_PLUGINS[@]}"; do
+            echo "CONFIG_FIRMWARE_INCLUDE_${m}=n" >> "$CONFIGFILE"
+          done
+
+          # Presets (append after baseline so later definitions win).
+          case "$PROFILE" in
+            lite)
+              ;;
+            balanced)
+              for m in SHADOWSOCKS XRAY TROJAN SMARTDNS HTOP TTYD IPERF3; do
+                echo "CONFIG_FIRMWARE_INCLUDE_${m}=y" >> "$CONFIGFILE"
+              done
+              ;;
+            full)
+              for m in SHADOWSOCKS XRAY TROJAN SSOBFS SMARTDNS HTOP TTYD IPERF3 \
+                VLMCSD MSD_LITE TRANSMISSION TRANSMISSION_WEB_CONTROL ARIA \
+                ARIA_WEB_CONTROL SMBD FTPD MINIDLNA ZEROTIER FRPC FRPS; do
+                echo "CONFIG_FIRMWARE_INCLUDE_${m}=y" >> "$CONFIGFILE"
+              done
+              ;;
+          esac
+
+          # Exact override from JSON: {"shadowsocks":"y","xray":"n"}
+          if [ -n "$PLUGINS" ]; then
+            echo "$PLUGINS" | jq -e 'type=="object"' >/dev/null || { echo "plugins must be a JSON object"; exit 1; }
+            echo "$PLUGINS" | jq -r 'to_entries[] | "CONFIG_FIRMWARE_INCLUDE_\(.key|ascii_upcase)=\(.value)"' >> "$CONFIGFILE"
+          fi
+
+          # NanoAd ad-filter slot must stay enabled.
+          echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=y" >> "$CONFIGFILE"
+
+          echo "--- final enabled plugins ---"
+          grep 'CONFIG_FIRMWARE_INCLUDE_.*=y' "$CONFIGFILE" | grep -v '^#'
+
+      - name: Build firmware
+        working-directory: src
+        run: make K2P TOOLCHAIN=mipsel-linux-musl
+
+      - name: Collect firmware
+        run: |
+          mkdir -p output
+          ls -lh src/trunk/images/
+          SRC=$(ls src/trunk/images/*.trx | head -1)
+          cp "$SRC" "output/TurBoTse-K2P-4.4-${{ inputs.suffix }}-${{ env.BUILD_DATE }}.trx"
+          ls -lh output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: padavan-K2P-${{ inputs.suffix }}-${{ env.BUILD_DATE }}
+          path: output/*.trx
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish release
+        if: ${{ inputs.publish_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: padavan-k2p-${{ inputs.suffix }}-${{ env.BUILD_DATE }}
+          name: Padavan K2P ${{ inputs.suffix }} ${{ env.BUILD_DATE }}
+          body: |
+            Profile: ${{ inputs.profile }}
+            Plugins JSON: ${{ inputs.plugins }}
+            Target: K2P, toolchain mipsel-linux-musl, source TurBoTse/padavan main.
+            Includes NanoAd ad filter in the Advanced -> Ad Management page.
+          files: output/*.trx
