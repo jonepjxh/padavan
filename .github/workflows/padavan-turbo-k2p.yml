@@ -35,10 +35,17 @@ jobs:
       - name: Download upstream source
         run: |
           curl -fL --retry 3 -o padavan.tar.gz \
-            https://codeload.github.com/jonepjxh/padavan-TurBoTse/tar.gz/refs/heads/main
+            https://codeload.github.com/TurBoTse/padavan/tar.gz/refs/heads/main
           mkdir -p src
           tar -xzf padavan.tar.gz -C src --strip-components=1
-          echo "Source commit: $(curl -fsSL https://api.github.com/repos/jonepjxh/padavan-TurBoTse/commits/main | python3 -c 'import json,sys;print(json.load(sys.stdin)["sha"])')"
+          echo "Source commit: $(curl -fsSL https://api.github.com/repos/TurBoTse/padavan/commits/main | python3 -c 'import json,sys;print(json.load(sys.stdin)["sha"])')"
+
+      - name: Apply NanoAd integration overlay
+        run: |
+          curl -fL --retry 3 -o nanoad-inject.tar.gz \
+            https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/nanoad-inject.tar.gz
+          tar -xzf nanoad-inject.tar.gz -C src
+          echo "NanoAd overlay applied."
 
       - name: Seed udns source (upstream mirrors are dead)
         run: |
