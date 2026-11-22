@@ -1,0 +1,95 @@
+name: Build K2P with Plugin Center
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    name: Build K2P Plugin Center (mipsel-linux-musl)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set build date
+        run: echo "BUILD_DATE=$(TZ='Asia/Shanghai' date +%Y%m%d)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: turbo-k2p-musl
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison flex gperf help2man libtool-bin texinfo python3-docutils \
+            autopoint gettext ccache autoconf automake liblzma-dev \
+            libltdl-dev liblzo2-dev curl xz-utils build-essential jq
+
+      - name: Download upstream source
+        run: |
+          curl -fL --retry 3 -o padavan.tar.gz \
+            https://codeload.github.com/TurBoTse/padavan/tar.gz/refs/heads/main
+          mkdir -p src
+          tar -xzf padavan.tar.gz -C src --strip-components=1
+
+      - name: Apply NanoAd + Plugin Center overlay
+        run: |
+          # plugincenter-overlay.tar.gz is built from NanoAd-patched sources and already
+          # includes both NanoAd and plugin-center changes (web_ex.c, CN.dict, state.js,
+          # pluginctl, Advanced_plugincenter.asp). Applying it alone covers both.
+          curl -fL --retry 3 -o pc-overlay.tar.gz \
+            https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/plugincenter-overlay.tar.gz
+          tar -xzf pc-overlay.tar.gz -C src
+          echo "NanoAd + Plugin Center overlay applied."
+
+      - name: Seed udns source
+        run: |
+          mkdir -p src/trunk/download
+          curl -fL --retry 3 -o src/trunk/download/udns-0.6.tar.gz \
+            https://deb.debian.org/debian/pool/main/u/udns/udns_0.6.orig.tar.gz
+          echo "696a2d0d518da985d975a65e11d166f3f57cdbd1d42376a0b85307f49601c6e8  src/trunk/download/udns-0.6.tar.gz" | sha256sum -c -
+
+      - name: Enable NanoAd slot
+        working-directory: src
+        run: |
+          echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=y" >> trunk/configs/templates/K2P.config
+          echo "--- key config lines ---"
+          grep -E 'CONFIG_FIRMWARE_INCLUDE_(ADBYBY|DROPBEAR|LANG_CN|IPSET)=y' trunk/configs/templates/K2P.config
+
+      - name: Build firmware
+        working-directory: src
+        run: make K2P TOOLCHAIN=mipsel-linux-musl
+
+      - name: Collect firmware
+        run: |
+          mkdir -p output
+          ls -lh src/trunk/images/
+          SRC=$(ls src/trunk/images/*.trx | head -1)
+          cp "$SRC" "output/TurBoTse-K2P-4.4-plugincenter-${{ env.BUILD_DATE }}.trx"
+          ls -lh output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: padavan-K2P-plugincenter-${{ env.BUILD_DATE }}
+          path: output/*.trx
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: padavan-k2p-plugincenter-${{ env.BUILD_DATE }}
+          name: Padavan K2P 插件中心版 ${{ env.BUILD_DATE }}
+          body: |
+            固件内置「高级设置 → 系统 → 插件中心」页面，可在线下载安装插件包。
+            插件仓库 tag: plugin-repo（jonepjxh/padavan-TurBoTse）。
+            同时包含 NanoAd 广告过滤（高级设置 → 广告管理）。
+            Target K2P, toolchain mipsel-linux-musl, source TurBoTse/padavan main.
+          files: output/*.trx
