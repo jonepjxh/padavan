@@ -204,7 +204,7 @@ jobs:
             json.dump({'arch':'mipsel-linux-musl','build':os.environ.get('BUILD_DATE',''),'plugins':index},f,ensure_ascii=False,indent=2)
           # TSV index consumed by the router-side pluginctl (pure awk, no jq/python)
           with open(os.path.join(pkgdir,'plugins.txt'),'w',encoding='utf-8') as f:
-            f.write('# name|title|file|size|sha256\n')
+            # No comment line: router-side pluginctl treats every NF>=4 line as a plugin.
             for it in index:
                 f.write('%s|%s|%s|%s|%s\n' % (it['name'],it['title'],it['file'],it['size'],it['sha256']))
           print('TOTAL plugins:',len(index))
