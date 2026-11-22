@@ -55,10 +55,10 @@ jobs:
           for m in \
             HTOP NANO IPERF3 TTYD SOCAT MTR LRZSZ TCPDUMP CURL \
             SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS SINGBOX NAIVEPROXY \
-            REDSOCKS MICROSOCKS CHINADNS_NG DNS2TCP DNS_PROXY IPT2SOCKS \
+            REDSOCKS \
             SMARTDNS ADGUARDHOME ALIDDNS DDNSTO ALDRIVER \
-            DDNSTO FRPC FRPS ARIA TRANSMISSION MINIDLNA FIREFLY \
-            XUPNPD VSFTPD DUMP1090 MSD_LITE VLMCSD MENTOHUST U2EC \
+            FRPC FRPS ARIA TRANSMISSION FTPD \
+            DUMP1090 MSD_LITE VLMCSD MENTOHUST U2EC \
             SCUTCLIENT DOGCOM GDUT_DRCOM MINIEAP NJIT_CLIENT SRELAY; do
             echo "CONFIG_FIRMWARE_INCLUDE_${m}=y" >> "$CFG"
           done
@@ -202,6 +202,11 @@ jobs:
             print('PACKED',name,os.path.getsize(out),'bytes',len(manifest['files']),'files')
           with open(os.path.join(pkgdir,'plugins.json'),'w',encoding='utf-8') as f:
             json.dump({'arch':'mipsel-linux-musl','build':os.environ.get('BUILD_DATE',''),'plugins':index},f,ensure_ascii=False,indent=2)
+          # TSV index consumed by the router-side pluginctl (pure awk, no jq/python)
+          with open(os.path.join(pkgdir,'plugins.txt'),'w',encoding='utf-8') as f:
+            f.write('# name|title|file|size|sha256\n')
+            for it in index:
+                f.write('%s|%s|%s|%s|%s\n' % (it['name'],it['title'],it['file'],it['size'],it['sha256']))
           print('TOTAL plugins:',len(index))
           PY
           ls -lh "$PKGDIR" | head -60
@@ -216,8 +221,8 @@ jobs:
       - name: Publish plugin repo release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: plugin-repo-${{ env.BUILD_DATE }}
-          name: K2P 插件仓库 ${{ env.BUILD_DATE }}
+          tag_name: plugin-repo
+          name: K2P 插件仓库 (plugin-repo)
           body: |
             独立插件包仓库，供固件「高级设置 → 插件管理」在线下载安装。
             架构：mipsel-linux-musl。每个 .tar.gz 内含二进制 + manifest.json。
