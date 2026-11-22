@@ -214,7 +214,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-repo-${{ env.BUILD_DATE }}
-          path: plugin-repo/*
+          path: src/plugin-repo/*
           if-no-files-found: error
           retention-days: 90
 
@@ -226,5 +226,6 @@ jobs:
           body: |
             独立插件包仓库，供固件「高级设置 → 插件管理」在线下载安装。
             架构：mipsel-linux-musl。每个 .tar.gz 内含二进制 + manifest.json。
-            plugins.json 为索引文件。
-          files: plugin-repo/*
+            plugins.txt 为固件读取的 TSV 索引，plugins.json 为完整索引。
+            共 27 个插件。动态链接插件依赖固件 /lib 中的 musl 运行库（完整固件/插件中心版均含）。
+          files: src/plugin-repo/*
