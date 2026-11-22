@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: '插件预设：lite=极简(仅基线+NanoAd) / balanced=均衡(代理+DNS+工具) / full=官方默认全套'
+        description: '插件预设：lite=极简(纯基线,不含NanoAd) / balanced=均衡(代理+DNS+工具) / full=官方默认全套'
         required: true
         type: choice
         options:
@@ -65,6 +65,7 @@ jobs:
           tar -xzf padavan.tar.gz -C src --strip-components=1
 
       - name: Apply NanoAd integration overlay
+        if: ${{ inputs.profile != 'lite' }}
         run: |
           curl -fL --retry 3 -o nanoad-inject.tar.gz \
             https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/nanoad-inject.tar.gz
@@ -85,7 +86,7 @@ jobs:
           PROFILE="${{ inputs.profile }}"
           PLUGINS='${{ inputs.plugins }}'
 
-          # All swappable plugin keys. ADBYBY is the NanoAd slot and is NEVER disabled.
+          # All swappable plugin keys. ADBYBY is the NanoAd slot, handled separately below.
           ALL_PLUGINS=(VLMCSD MSD_LITE HTOP SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
             SINGBOX NAIVEPROXY REDSOCKS SMARTDNS ADGUARDHOME DNSFORWARDER \
             TRANSMISSION TRANSMISSION_WEB_CONTROL ARIA ARIA_WEB_CONTROL \
@@ -124,8 +125,19 @@ jobs:
             echo "$PLUGINS" | jq -r 'to_entries[] | "CONFIG_FIRMWARE_INCLUDE_\(.key|ascii_upcase)=\(.value)"' >> "$CONFIGFILE"
           fi
 
-          # NanoAd ad-filter slot must stay enabled.
-          echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=y" >> "$CONFIGFILE"
+          # NanoAd ad-filter slot: lite profile excludes it entirely; other profiles keep it.
+          if [ "$PROFILE" = "lite" ]; then
+            echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> "$CONFIGFILE"
+          else
+            echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=y" >> "$CONFIGFILE"
+          fi
+
+          # Exact JSON override can still opt NanoAd in/out explicitly.
+          if [ -n "$PLUGINS" ]; then
+            if echo "$PLUGINS" | jq -e 'has("adbyby")' >/dev/null 2>&1; then
+              echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=$(echo "$PLUGINS" | jq -r '.adbyby')" >> "$CONFIGFILE"
+            fi
+          fi
 
           echo "--- final enabled plugins ---"
           grep 'CONFIG_FIRMWARE_INCLUDE_.*=y' "$CONFIGFILE" | grep -v '^#'
@@ -159,5 +171,5 @@ jobs:
             Profile: ${{ inputs.profile }}
             Plugins JSON: ${{ inputs.plugins }}
             Target: K2P, toolchain mipsel-linux-musl, source TurBoTse/padavan main.
-            Includes NanoAd ad filter in the Advanced -> Ad Management page.
+            NanoAd (Ad Management): included only when the applied config has CONFIG_FIRMWARE_INCLUDE_ADBYBY=y; the lite profile excludes it. NanoAd is also available as a standalone plugin from the plugin-repo release.
           files: output/*.trx
