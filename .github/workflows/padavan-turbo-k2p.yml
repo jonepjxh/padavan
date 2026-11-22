@@ -1,0 +1,67 @@
+name: Build TurBoTse Padavan K2P
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    name: Build K2P (mipsel-linux-musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set build date
+        run: echo "BUILD_DATE=$(TZ='Asia/Shanghai' date +%Y%m%d)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: turbo-k2p-musl
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison flex gperf help2man libtool-bin texinfo python3-docutils \
+            autopoint gettext ccache autoconf automake liblzma-dev \
+            libltdl-dev liblzo2-dev curl xz-utils build-essential
+
+      - name: Download upstream source
+        run: |
+          curl -fL --retry 3 -o padavan.tar.gz \
+            https://codeload.github.com/TurBoTse/padavan/tar.gz/refs/heads/main
+          mkdir -p src
+          tar -xzf padavan.tar.gz -C src --strip-components=1
+          echo "Source commit: $(curl -fsSL https://api.github.com/repos/TurBoTse/padavan/commits/main | python3 -c 'import json,sys;print(json.load(sys.stdin)["sha"])')"
+
+      - name: Build firmware
+        working-directory: src
+        run: make K2P TOOLCHAIN=mipsel-linux-musl
+
+      - name: Collect firmware
+        run: |
+          mkdir -p output
+          ls -lh src/trunk/images/
+          cp src/trunk/images/*.trx output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: padavan-K2P-musl-${{ env.BUILD_DATE }}
+          path: output/*.trx
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: padavan-k2p-${{ env.BUILD_DATE }}
+          name: Padavan K2P ${{ env.BUILD_DATE }}
+          body: |
+            TurBoTse/padavan upstream main, target K2P, toolchain mipsel-linux-musl.
+          files: output/*.trx
