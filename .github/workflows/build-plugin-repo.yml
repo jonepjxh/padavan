@@ -58,7 +58,8 @@ jobs:
       - name: Fetch plugin packaging assets
         run: |
           BASE=https://raw.githubusercontent.com/jonepjxh/padavan-TurBoTse/main/plugin-build
-          curl -fL --retry 3 -o src/build_extra_plugins.py "$BASE/build_extra_plugins.py"
+          curl -fL --retry 3 -o src/build_extra_plugins.py "$BASE/build_extra_plugins.py?v=2"
+          grep -q "os.path.join(SRC, 'plugin_patch')" src/build_extra_plugins.py || { echo "WARN: stale builder cached, retry with API"; sleep 5; curl -fL --retry 3 -o src/build_extra_plugins.py "$BASE/build_extra_plugins.py?v=3"; }
           mkdir -p src/plugin_patch/nanoad src/plugin_patch/adbyby
           for kind in nanoad adbyby; do
             for f in install.sh start.sh stop.sh; do
